@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verity</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: radial-gradient(circle at 50% 40%, #131c31 0%, #050811 80%, #020308 100%);
+      color: #e2e8f0;
+      height: 100vh;
+      overflow: hidden;
+      margin: 0;
+    }
+
+    .search-pill {
+      background: #1e1f2b;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: all 0.3s ease;
+    }
+    .search-pill:focus-within {
+      background: #252736;
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+
+    .prose a { color: #38bdf8; text-decoration: none; }
+    .prose a:hover { text-decoration: underline; }
+    .prose strong { color: #ffffff; font-weight: 600; }
+    .prose h1, .prose h2, .prose h3 { color: #ffffff; margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 500;}
+  </style>
+</head>
+<body class="flex flex-col h-screen antialiased selection:bg-blue-500/30">
+
+  <!-- Top Navigation -->
+  <header class="w-full p-6 flex justify-start items-center absolute top-0 left-0 z-50 pointer-events-none">
+    <div class="text-xl font-medium tracking-wide text-gray-200">Verity</div>
+  </header>
+
+  <!-- Main Scrollable Chat Area -->
+  <div id="chat-container" class="flex-1 w-full max-w-4xl mx-auto overflow-y-auto custom-scrollbar pt-24 pb-40 px-6 hidden relative z-30">
+    <!-- Chat messages will be injected here -->
+  </div>
+
+  <!-- Landing Text (Decoupled from the 3D Canvas) -->
+  <div id="landing-text" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 transition-opacity duration-700 ease-out">
+    <h1 class="text-3xl md:text-4xl font-normal text-white mt-80 tracking-tight">Let's jump in</h1>
+  </div>
+
+  <!-- 3D Robot Container (Independent & Animated for Flight) -->
+  <div id="robot-canvas-container" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 scale-100 w-64 h-64 md:w-80 md:h-80 z-20 transition-all duration-[1200ms] ease-[cubic-bezier(0.25,1,0.5,1)] cursor-grab active:cursor-grabbing"></div>
+
+  <!-- Bottom Input Dock -->
+  <div class="absolute bottom-0 w-full bg-gradient-to-t from-[#020308] via-[#050811] to-transparent pt-12 pb-8 px-6 z-50">
+    <div class="max-w-3xl mx-auto relative flex flex-col items-center">
+
+      <div id="status-carousel" class="absolute -top-8 text-sm text-gray-400 font-medium tracking-wide hidden transition-opacity duration-300">
+        <i class="fa-solid fa-sparkles mr-2 text-blue-400"></i><span id="status-text">Thinking...</span>
+      </div>
+
+      <form id="research-form" class="w-full flex items-center search-pill rounded-full px-5 py-3.5 shadow-lg">
+        <button type="button" class="text-gray-400 hover:text-white transition-colors p-2">
+          <i class="fa-solid fa-plus text-lg"></i>
+        </button>
+        <input
+          id="query-input"
+          type="text"
+          placeholder="Ask Verity"
+          class="flex-1 bg-transparent border-none outline-none text-gray-200 placeholder-gray-500 text-base px-4 font-normal"
+          autocomplete="off"
+          required
+        />
+        <button id="submit-btn" type="submit" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all">
+          <i class="fa-solid fa-arrow-up"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Three.js 3D Robot Logic -->
+  <script>
+    try {
+      const container = document.getElementById('robot-canvas-container');
+      const scene = new THREE.Scene();
+
+      const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+      camera.position.set(0, 0.1, 3.2);
+
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container.appendChild(renderer.domElement);
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      keyLight.position.set(2, 4, 3);
+      scene.add(keyLight);
+      const fillLight = new THREE.DirectionalLight(0x3b82f6, 1.5);
+      fillLight.position.set(-3, -1, -2);
+      scene.add(fillLight);
+      const coreLight = new THREE.PointLight(0x60a5fa, 2, 2);
+      coreLight.position.set(0, -0.2, 0.5);
+      scene.add(coreLight);
+
+      const bodyMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.1, clearcoat: 1.0, clearcoatRoughness: 0.2 });
+      const screenMat = new THREE.MeshPhysicalMaterial({ color: 0x050505, roughness: 0.1, metalness: 0.8, clearcoat: 1.0 });
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x60a5fa });
+
+      const robotGroup = new THREE.Group();
+      scene.add(robotGroup);
+
+      const headGroup = new THREE.Group();
+      const headGeo = new THREE.SphereGeometry(0.45, 32, 32);
+      headGeo.scale(1.2, 0.9, 1);
+      const head = new THREE.Mesh(headGeo, bodyMat);
+      headGroup.add(head);
+
+      const screenGeo = new THREE.SphereGeometry(0.46, 32, 32);
+      screenGeo.scale(1.05, 0.6, 0.8);
+      const screen = new THREE.Mesh(screenGeo, screenMat);
+      screen.position.set(0, 0.02, 0.1);
+      headGroup.add(screen);
+
+      const leftEye = new THREE.Mesh(new THREE.CircleGeometry(0.05, 32), eyeMat);
+      leftEye.position.set(-0.18, 0.05, 0.45);
+      headGroup.add(leftEye);
+      const rightEye = leftEye.clone();
+      rightEye.position.set(0.18, 0.05, 0.45);
+      headGroup.add(rightEye);
+
+      headGroup.position.y = 0.35;
+      robotGroup.add(headGroup);
+
+      const torsoGeo = new THREE.CylinderGeometry(0.25, 0.15, 0.5, 32);
+      const torso = new THREE.Mesh(torsoGeo, bodyMat);
+      torso.position.y = -0.25;
+      robotGroup.add(torso);
+
+      const core = new THREE.Mesh(new THREE.SphereGeometry(0.08, 32, 32), eyeMat);
+      core.position.set(0, -0.15, 0.23);
+      robotGroup.add(core);
+
+      const leftArmPivot = new THREE.Group();
+      leftArmPivot.position.set(-0.35, -0.15, 0);
+      const armGeo = new THREE.SphereGeometry(0.06, 32, 32);
+      armGeo.scale(1, 2.5, 1);
+      const leftArm = new THREE.Mesh(armGeo, bodyMat);
+      leftArm.position.set(-0.1, -0.1, 0);
+      leftArmPivot.add(leftArm);
+      robotGroup.add(leftArmPivot);
+
+      const rightArmPivot = new THREE.Group();
+      rightArmPivot.position.set(0.35, -0.15, 0);
+      const rightArm = new THREE.Mesh(armGeo, bodyMat);
+      rightArm.position.set(0.1, -0.1, 0);
+      rightArmPivot.add(rightArm);
+      robotGroup.add(rightArmPivot);
+
+      let mouseX = 0, mouseY = 0, isHovered = false, spinVelocity = 0;
+
+      window.addEventListener('mousemove', (e) => {
+        mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+        mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
+      });
+
+      container.addEventListener('mouseenter', () => isHovered = true);
+      container.addEventListener('mouseleave', () => isHovered = false);
+      container.addEventListener('mousedown', () => { spinVelocity = 0.5; });
+
+      const clock = new THREE.Clock();
+      let blinkTimer = 0;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const t = clock.getElapsedTime();
+
+        robotGroup.position.y = Math.sin(t * 2.5) * 0.08;
+
+        if (spinVelocity > 0.01) {
+          robotGroup.rotation.y += spinVelocity;
+          spinVelocity *= 0.92;
+        } else {
+          robotGroup.rotation.y = THREE.MathUtils.lerp(robotGroup.rotation.y, mouseX * 0.2, 0.05);
+        }
+
+        if (isHovered) {
+          leftArmPivot.rotation.z = Math.sin(t * 8) * 0.5 + 2.0;
+          leftArmPivot.rotation.x = Math.cos(t * 8) * 0.3;
+          rightArmPivot.rotation.z = -0.3;
+        } else {
+          leftArmPivot.rotation.z = Math.sin(t * 1.5) * 0.1 + 0.2;
+          rightArmPivot.rotation.z = Math.sin(t * 1.5 + Math.PI) * 0.1 - 0.2;
+        }
+
+        headGroup.rotation.y = THREE.MathUtils.lerp(headGroup.rotation.y, mouseX * 0.4, 0.08);
+        headGroup.rotation.x = THREE.MathUtils.lerp(headGroup.rotation.x, -mouseY * 0.3, 0.08);
+
+        const pulse = 1 + Math.sin(t * 6) * 0.15;
+        core.scale.set(pulse, pulse, pulse);
+        coreLight.intensity = pulse * 2;
+
+        blinkTimer += 0.016;
+        if (blinkTimer > 3.5) {
+          leftEye.scale.y = rightEye.scale.y = 0.1;
+          if (blinkTimer > 3.65) {
+            leftEye.scale.y = rightEye.scale.y = 1;
+            blinkTimer = 0;
+          }
+        }
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+      });
+    } catch (err) {
+      console.error("Robot initialization failed:", err);
+    }
+  </script>
+
+  <!-- UI Interaction Logic -->
+  <script>
+    const form = document.getElementById('research-form');
+    const input = document.getElementById('query-input');
+    const submitBtn = document.getElementById('submit-btn');
+    const landingText = document.getElementById('landing-text');
+    const robotContainer = document.getElementById('robot-canvas-container');
+    const chatContainer = document.getElementById('chat-container');
+    const statusCarousel = document.getElementById('status-carousel');
+    const statusText = document.getElementById('status-text');
+
+    const loadingStates = ["Pondering query...", "Executing deep search...", "Reading verified sources...", "Synthesizing report..."];
+    let intervalId;
+
+    function appendMessage(content, isUser = false) {
+      const div = document.createElement('div');
+      div.className = `flex w-full mb-8 ${isUser ? 'justify-end' : 'justify-start'}`;
+
+      const innerBubble = document.createElement('div');
+      innerBubble.className = isUser
+        ? 'bg-[#1e1f2b] text-gray-200 px-6 py-4 rounded-3xl max-w-[85%] text-base shadow-md border border-white/5'
+        : 'prose prose-invert text-gray-300 max-w-full text-base leading-relaxed pl-2 md:pl-0';
+
+      innerBubble.innerHTML = isUser ? content : marked.parse(content);
+      div.appendChild(innerBubble);
+      chatContainer.appendChild(div);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const query = input.value.trim();
+      if (!query) return;
+
+      input.value = '';
+
+      // 1. Fade out the landing text
+      landingText.style.opacity = '0';
+      setTimeout(() => landingText.style.display = 'none', 700);
+
+      // 2. Trigger the Robot's Flight to the Left Panel
+      robotContainer.classList.remove('left-1/2', '-translate-x-1/2', 'scale-100');
+      robotContainer.classList.add('left-4', 'md:left-12', 'scale-75', 'md:scale-90');
+
+      // 3. Reveal the Chat Container
+      chatContainer.classList.remove('hidden');
+      appendMessage(query, true);
+
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-gray-400"></i>';
+      statusCarousel.classList.remove('hidden');
+
+      let stateIdx = 0;
+      statusText.textContent = loadingStates[0];
+      intervalId = setInterval(() => {
+        stateIdx = (stateIdx + 1) % loadingStates.length;
+        statusText.textContent = loadingStates[stateIdx];
+      }, 2500);
+
+try {
+        const res = await fetch('/api/research', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+
+        clearInterval(intervalId);
+        statusCarousel.classList.add('hidden');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-arrow-up"></i>';
+
+        if (data.report) {
+          let reportContent = data.report;
+          // Dynamically append the hard-verified sources from the backend state
+          if (data.sources && data.sources.length > 0) {
+            reportContent += `\n\n<hr class="border-gray-700 my-4">\n**Graph-Verified Sources:**\n`;
+            data.sources.forEach((url) => {
+              reportContent += `* [${url}](${url})\n`;
+            });
+          }
+          appendMessage(reportContent);
+        } else {
+          appendMessage(`Error: ${data.error}`);
+        }
+      } catch (err) {
+        clearInterval(intervalId);
+        statusCarousel.classList.add('hidden');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-arrow-up"></i>';
+        appendMessage(`Connection error: ${err.message}`);
+      }
+    });
+  </script>
+</body>
+</html>
